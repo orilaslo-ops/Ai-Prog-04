@@ -125,7 +125,14 @@ Never show `authorization` or `x-api-key` header values on the page (show the fi
 ---
 
 ## Open Decisions
-Where this spec is silent or ambiguous, the building agent must **stop and ask the user** before deciding, instead of silently picking an answer. Each decision made this way is then written back into this spec, so the next build does not need to ask again.
+Where this spec is silent or ambiguous, the building agent must **stop and ask the user** before deciding, instead of silently picking an answer.
+
+The building agent also keeps an `ASSUMPTIONS.md` file in the build folder. For every question it asked, and every other place where it had to choose something the spec did not state, it records:
+- the question or ambiguity,
+- the answer it got (or what it chose, and why),
+- whether the spec should settle this next time.
+
+At the end of the build it adds a short section "Questions for the next spec version" listing the open points worth addressing in the next revision of this spec. The user then writes the decisions back into this spec, so the next build does not need to ask again.
 
 ---
 
