@@ -19,5 +19,5 @@ every choice below is one the spec did not settle, with what was chosen and why.
 
 ## Questions for the next spec version
 1. Should the pinned plan keep separate `TodoWrite` and `TaskCreate` lists, or always one list?
-2. Should stars and the theme be the only things kept across reloads, or stars too?
+2. Should stars survive a reload too (in `localStorage`, like the theme)?
 3. Should the dark table also give colors for the side panels, tags and turn dividers?
