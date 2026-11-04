@@ -56,6 +56,7 @@ Claude Code itself (the agent) is **not** a member: it is the group.
 The page has the shape of WhatsApp Web:
 
 - **Chat list (left sidebar):** one row per chat (section 7). Each row shows the chat name, the last message preview, its time, and an unread counter. The main conversation is open by default.
+  - **Order:** the main chat is pinned at the top. The other chats are sorted by last activity, newest first, like WhatsApp; "Side requests" is sorted like any other chat. A row moves only when a new message arrives in it, never while the user is clicking it.
 - **Chat header (top):** the group name ("Claude Code"), the model name as a tag, and the members currently in the group ("You, Claude, Read"). Clicking the header opens the group info panel.
 - **Group info panel (right side, closed by default):**
   - **System Prompt** (collapsed, heading + line count; click to expand the full text). Note: `system` is an array of blocks, not a string.
@@ -127,13 +128,18 @@ Besides the main conversation, Claude Code runs sub-agents and sends side reques
 
 - **Main chat:** the conversation with you. Open by default.
 - **Sub-agent chats:** each sub-agent is its own chat, named after its first message (cut to ~40 characters), with "🤖 Sub-agent" as its tag.
-- **Side requests chat:** one chat that collects all side requests, shown compact and dimmed. A side request is anything that is not `POST /v1/messages` with a non-empty `tools` list (small-model calls for titles or classification, `count_tokens`, `HEAD`/`GET` checks).
+  - In a sub-agent chat, the prompt and every other non-tool user message come from **🤖 Main agent** (left side, its own name color), not from "You": the sub-agent was started by the main agent, not by the user. The header lists the members as "Main agent, Claude, ...".
+- **Side requests chat:** one chat that collects all side requests, shown compact and dimmed. A side request is anything that is not `POST /v1/messages` with a non-empty `tools` list (small-model calls for titles or classification, `count_tokens`, `HEAD`/`GET` checks), plus forked requests (see below).
 
 A request belongs to an existing chat when its first message is identical to that chat's first message (ignoring `cache_control`). Otherwise it starts a new chat.
 
+**Main or sub-agent:** a new chat is a **sub-agent** chat when the text of its first user message equals the `prompt` input of an `Agent` (or `Task`) tool call already seen in any chat. Otherwise it is the **main** chat. If there is already a main chat and a new chat does not match any `Agent` call (for example the page was opened while a sub-agent was running), the new chat is shown as a sub-agent chat with the tag "🤖 Sub-agent (?)". A chat that later turns out to be the one the user types into is not moved; this is accepted for v1.
+
+**Forked requests are side requests:** Claude Code sometimes sends a request with the same history as a chat plus one extra user message that the user did not type (for example to suggest the next prompt). It carries tools, so it looks like a normal turn when it arrives, and it is shown in the chat as usual. A fork is recognized afterwards: when a later request of the same chat continues from the same history **without** that extra message, the earlier request was a fork. Its message and Claude's answer to it are then removed from the chat and moved to the "Side requests" chat, labeled "fork of <chat name>". A fork that is never followed by another request (the last one of a run) stays in the chat; this is accepted for v1.
+
 ### 8. Included Features
 - **Message details:** every Claude bubble has a small ⓘ button that opens the full request behind it (model, parameters, HTTP headers, full JSON), collapsed by default. Nothing forces the user to read it, but every part of a request stays reachable.
-- **Tool filter:** Dropdown in the chat header. "All" (default) or "Only tool X": shows only Claude's calls to tool X and tool X's answers (with their join/leave lines). Updates the view in real time.
+- **Tool filter:** Dropdown in the chat header. "All" (default) or "Only tool X": shows Claude's bubbles that call tool X and tool X's answers (with their join/leave lines). Your messages stay visible but dimmed, so the reader still sees what was asked; everything else is hidden. The filter is per chat. Updates the view in real time.
 - **Error highlighting:** Tool results with `is_error: true` are rose tool bubbles. HTTP errors (status ≥ 400) or an `error` SSE event appear as a rose bubble from Claude with the status and error message. A counter in the header ("⚠️ 3 errors") jumps to the next error when clicked. Errors do **not** change the order of the chat. Chats with errors show a ⚠️ in the chat list.
 - **Stats:** under each Claude bubble, in small muted gray text where WhatsApp shows the time: clock time | input tokens | cache read | cache creation | output tokens | latency (time to first byte and total) | cost. Tool bubbles show only the clock time. Totals and tool usage counts per tool are in the group info panel.
 - **Cost:** Computed from a hard-coded per-model price table in `dashboard.py` (input, output, cache read, cache write per million tokens). Unknown model: show tokens only, cost "n/a".
@@ -188,6 +194,8 @@ Run all three terminals from "How to Run", open the page, then in the agent:
 11. After 50 exchanges, scrolling is smooth and no message is missing.
 12. The agent behaves exactly as it does without the dashboard (no broken or delayed streaming).
 13. No authorization token is visible anywhere on the page.
+14. Ask the agent to use a sub-agent ("use a sub-agent to list the files"): a new chat tagged "🤖 Sub-agent" appears in the chat list, its prompt comes from "🤖 Main agent", and the main chat stays pinned at the top.
+15. Choose "Only tool Read" in the tool filter: only Read calls and answers are shown, and your messages are still visible, dimmed.
 
 ## Out of Scope (for v1)
 - Free-text search or jumping to a specific message
@@ -217,6 +225,28 @@ Run all three terminals from "How to Run", open the page, then in the agent:
 - Tool filter, error counter, Clear button, "new messages" button
 - Stats under Claude's bubbles and totals in the group info panel
 
-**Event schema** (rough; will be refined):
-- `{ "type": "request", "id": ..., "data": { model, system, tools, messages, params, started_at } }`
-- `{ "type": "reply", "id": ..., "data": { status, content (text, tool_use, thinking), usage, ttfb_ms, total_ms } }`
+**Event schema** (final; `dashboard.py` sends one JSON object per SSE `data:` line):
+- **Request**, sent as soon as a request arrives, before it is forwarded:
+  ```
+  { "type": "request", "id": 7, "data": {
+      "method": "POST", "path": "/v1/messages",
+      "headers": { ... },            // authorization / x-api-key masked (section 11)
+      "model": "...", "system": [...], "tools": [...], "messages": [...],
+      "params": { ... },             // every other field of the body (stream, max_tokens, ...)
+      "raw_body": null,              // the body as text (first 20 000 chars) only when it is not JSON
+      "started_at": 1730720000000    // ms since epoch
+  } }
+  ```
+- **Reply**, sent once the reply is complete (or failed); same `id` as its request:
+  ```
+  { "type": "reply", "id": 7, "data": {
+      "status": 200,
+      "content": [...],              // reassembled text / tool_use / thinking blocks
+      "usage": { ... }, "stop_reason": "tool_use", "model": "...",
+      "streamed": true,
+      "error": null,                 // or { "type": ..., "message": ... }
+      "ttfb_ms": 412, "total_ms": 3810,
+      "cost": 0.0123                 // USD, or null for an unknown model
+  } }
+  ```
+- `system`, `tools` and `messages` are `null` when the body has none (for example `GET` or `HEAD`).
