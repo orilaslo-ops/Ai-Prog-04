@@ -57,7 +57,7 @@ The page has the shape of WhatsApp Web:
 
 - **Chat list (left sidebar):** one row per chat (section 7). Each row shows the chat name, the last message preview, its time, and an unread counter. The main conversation is open by default.
   - **Order:** the main chat is pinned at the top. The other chats are sorted by last activity, newest first, like WhatsApp; "Side requests" is sorted like any other chat. A row moves only when a new message arrives in it, never while the user is clicking it.
-- **Chat header (top):** the group name ("Claude Code"), the model name as a tag, and the members currently in the group ("You, Claude, Read"). Clicking the header opens the group info panel.
+- **Chat header (top):** the group name ("Claude Code"), the model name as a tag, the members currently in the group ("You, Claude, Read"), Claude's status line and the context meter (section 12). Clicking the header opens the group info panel.
 - **Group info panel (right side, closed by default):**
   - **System Prompt** (collapsed, heading + line count; click to expand the full text). Note: `system` is an array of blocks, not a string.
   - **Tools Available: N** with the tool names as a comma-separated list; click to see the full schemas.
@@ -106,6 +106,8 @@ Every message type has its own soft, pleasant color and icon, so types can be to
 | Thinking (`thinking`, inside Claude's bubble) | `#F3EEFA` soft lavender | `#9B7FD1` | 💭 (collapsed) |
 | System lines (joined / left / changes) | none, centered gray pill | none | small gray text |
 | `<system-reminder>` text inside your messages | dimmed, smaller font | none | collapsed |
+| `Bash` result (terminal bubble, section 12) | `#2B2F36` dark slate, light text `#E6E6E6`, monospace | `#5FA8B0` | ↩ + exit-code tag |
+| `Edit` result diff lines (section 12) | added `#E6F4EA` / removed `#FCE8E8` | none | `+` / `−` in the margin |
 
 Chat background is an off-white (`#FAFAF8`). Whitespace between bubbles is generous.
 
@@ -157,6 +159,19 @@ Transcript lives in browser memory only. Page reload clears everything; the page
 ### 11. Security
 Never show `authorization` or `x-api-key` header values on the page (show the first few characters followed by `...`, as `proxy.py` does).
 
+### 12. WhatsApp Touches
+Small WhatsApp habits that make the agent's work easier to read. Each one is built from data the dashboard already has.
+
+- **Ticks on your messages (✓✓):** each of your bubbles shows ticks in its corner, the way WhatsApp does: ✓ gray when the request that carries it was sent, ✓✓ gray when the first byte of Claude's reply arrived, ✓✓ blue when the reply is complete. An HTTP or SSE error turns the ticks into a red ⚠️. Hovering over the ticks shows the times (sent, first byte, done).
+- **Pinned plan (`TodoWrite`):** when Claude calls `TodoWrite`, its todo list is pinned at the top of the chat, like a pinned message, under the header: "📌 Plan · 3/5 done". It shows each item with ☐ (pending), ⏳ (in progress) or ✅ (completed), and it updates with every later `TodoWrite` call. It is collapsed to one line by default; clicking it opens the full list. The `TodoWrite` calls themselves still appear in the chat as normal tool calls.
+- **Files as attachments:**
+  - A `Read` result is shown as a document card, like a file sent in WhatsApp: "📄 README.md · 120 lines" with the first 3 lines as a preview. Clicking the card opens the full content (with line numbers).
+  - An `Edit` (or `MultiEdit`) call is shown in the tool's bubble as a diff: removed lines (`old_string`) in rose with `−`, added lines (`new_string`) in green with `+`. A `Write` call is a document card like `Read`, marked "new file".
+- **Turn dividers:** like the "Today" pill in WhatsApp, a centered divider appears before each of your prompts after the first one. Once the turn is finished (Claude's reply has no tool calls), the divider of the turn that just ended shows its summary: "Turn 3 · 4 tool calls · 12 s · $0.04". Turns are counted per chat.
+- **Context meter:** a small battery icon in the header shows how full the context window is, from the last reply of this chat: (input + cache read + cache creation tokens) ÷ the model's context window, in percent. Gray below 70%, orange from 70%, red from 90% (compaction is near). The context window size comes from a hard-coded table in `dashboard.py` next to the price table; an unknown model shows "?".
+- **Status line:** under the group name, where WhatsApp shows "online", the header shows what is happening now: "Claude is typing..." while a reply streams, "waiting for Read" while a tool is in the group, "waiting for you" after a reply with no tool calls, "idle" when nothing has happened for 60 seconds.
+- **Terminal bubbles for `Bash`:** the `Bash` call shows its command as `$ <command>`; Bash's answer is a dark terminal-style bubble (see the table in section 3) in a monospace font, with the exit code as a tag ("exit 0" green, anything else rose) when it can be read from the result. Long output is collapsed like any long text.
+
 ---
 
 ## Open Decisions
@@ -196,6 +211,12 @@ Run all three terminals from "How to Run", open the page, then in the agent:
 13. No authorization token is visible anywhere on the page.
 14. Ask the agent to use a sub-agent ("use a sub-agent to list the files"): a new chat tagged "🤖 Sub-agent" appears in the chat list, its prompt comes from "🤖 Main agent", and the main chat stays pinned at the top.
 15. Choose "Only tool Read" in the tool filter: only Read calls and answers are shown, and your messages are still visible, dimmed.
+16. Your message gets ✓, then ✓✓, then blue ✓✓ as the reply arrives and completes.
+17. Ask "make a 3-step todo list and do it": a "📌 Plan" pin appears under the header and its items get ✅ as Claude works.
+18. `Read` results are document cards ("📄 name · N lines"); ask for a small edit: the `Edit` call shows a red/green diff.
+19. Each new prompt starts with a turn divider; after the turn ends it shows tool calls, time and cost.
+20. The header shows the context meter as a percentage and a status line that changes between "typing", "waiting for <tool>" and "waiting for you".
+21. Ask the agent to run `ls`: the call shows `$ ls`, and Bash's answer is a dark terminal bubble.
 
 ## Out of Scope (for v1)
 - Free-text search or jumping to a specific message
@@ -214,7 +235,7 @@ Run all three terminals from "How to Run", open the page, then in the agent:
 - Pass-through reverse proxy to `--upstream`, streaming replies back byte for byte
 - Records each request and reassembles each streamed reply (section 6)
 - Serves the page at `/dashboard` and the SSE stream at `/dashboard/events`
-- Hard-coded price table for cost
+- Hard-coded price table for cost, and a context window size per model (section 12)
 
 **Page (single HTML file served by `dashboard.py`):**
 - SSE client for `/dashboard/events`
@@ -224,6 +245,7 @@ Run all three terminals from "How to Run", open the page, then in the agent:
 - Show each message once, split traffic into chats (sections 5, 7)
 - Tool filter, error counter, Clear button, "new messages" button
 - Stats under Claude's bubbles and totals in the group info panel
+- WhatsApp touches: ticks, pinned plan, file cards and diffs, turn dividers, context meter, status line, terminal bubbles (section 12)
 
 **Event schema** (final; `dashboard.py` sends one JSON object per SSE `data:` line):
 - **Request**, sent as soon as a request arrives, before it is forwarded:
@@ -246,7 +268,8 @@ Run all three terminals from "How to Run", open the page, then in the agent:
       "streamed": true,
       "error": null,                 // or { "type": ..., "message": ... }
       "ttfb_ms": 412, "total_ms": 3810,
-      "cost": 0.0123                 // USD, or null for an unknown model
+      "cost": 0.0123,                // USD, or null for an unknown model
+      "context_window": 200000       // tokens, from the table in dashboard.py, or null (section 12)
   } }
   ```
 - `system`, `tools` and `messages` are `null` when the body has none (for example `GET` or `HEAD`).
