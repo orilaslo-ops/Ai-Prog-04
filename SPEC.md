@@ -57,11 +57,12 @@ The page has the shape of WhatsApp Web:
 
 - **Chat list (left sidebar):** one row per chat (section 7). Each row shows the chat name, the last message preview, its time, and an unread counter. The main conversation is open by default.
   - **Order:** the main chat is pinned at the top. The other chats are sorted by last activity, newest first, like WhatsApp; "Side requests" is sorted like any other chat. A row moves only when a new message arrives in it, never while the user is clicking it.
-- **Chat header (top):** the group name ("Claude Code"), the model name as a tag, the members currently in the group ("You, Claude, Read"), Claude's status line and the context meter (section 12). Clicking the header opens the group info panel.
+- **Chat header (top):** the group name ("Claude Code"), the model name as a tag, the members currently in the group ("You, Claude, Read"), Claude's status line, the context meter and the 🌙 dark mode button (section 12). Clicking the header (outside its buttons) opens the group info panel.
 - **Group info panel (right side, closed by default):**
   - **System Prompt** (collapsed, heading + line count; click to expand the full text). Note: `system` is an array of blocks, not a string.
   - **Tools Available: N** with the tool names as a comma-separated list; click to see the full schemas.
   - Totals for this chat (tokens, cost) and how many times each tool was called.
+  - **Media, links and docs** and **Starred messages** (section 12).
 - **Chat area (center):** the messages, oldest at the top, newest at the bottom.
 
 **Scrolling:** when the user is at the bottom, new messages scroll into view automatically. When the user has scrolled up to read, the view stays where it is and a "↓ N new messages" button appears at the bottom; clicking it jumps down.
@@ -103,6 +104,8 @@ Every message type has its own soft, pleasant color and icon, so types can be to
 | Tool call (`tool_use`, inside Claude's bubble) | `#FFF4E5` soft peach | `#F0A35E` | 🔧 (tool name in bold) |
 | Tool result (tool's own bubble) | `#EEF6F7` soft teal | `#5FA8B0` | ↩ |
 | Tool result with error | `#FDECEC` soft rose | `#E06C6C` | ⚠️ |
+| Poll card (`AskUserQuestion`, section 12) | `#FFF9E0` soft yellow | `#E0C14C` | 📊 |
+| Main agent's message (sub-agent chats, section 7) | `#EEF0F3` soft slate | `#7A8699` | 🤖 |
 | Thinking (`thinking`, inside Claude's bubble) | `#F3EEFA` soft lavender | `#9B7FD1` | 💭 (collapsed) |
 | System lines (joined / left / changes) | none, centered gray pill | none | small gray text |
 | `<system-reminder>` text inside your messages | dimmed, smaller font | none | collapsed |
@@ -110,6 +113,23 @@ Every message type has its own soft, pleasant color and icon, so types can be to
 | `Edit` result diff lines (section 12) | added `#E6F4EA` / removed `#FCE8E8` | none | `+` / `−` in the margin |
 
 Chat background is an off-white (`#FAFAF8`). Whitespace between bubbles is generous.
+
+**Dark mode** (section 12): the same types, the same icons and the same borders, on dark backgrounds with light text (`#E6E6E6`):
+
+| Type | Dark background |
+|---|---|
+| Chat background | `#14181D` |
+| Your prompt | `#1E2B3C` |
+| Claude text | `#1C2E24` |
+| Tool call | `#3A2E1F` |
+| Tool result | `#1D2D30` |
+| Tool result with error | `#3A2224` |
+| Thinking | `#2A2438` |
+| Main agent's message | `#262B33` |
+| `Bash` terminal bubble | `#0E1013` |
+| Poll card | `#3A341C` |
+| Diff added / removed | `#1F3A28` / `#3F2326` |
+| System lines | gray pill `#2A2F36`, text `#A0A7B0` |
 
 ### 4. Content Blocks
 Messages contain arrays of content blocks. The dashboard must handle at least: `text`, `tool_use`, `tool_result`, `thinking`, and `image` (shown as a placeholder). `<system-reminder>...</system-reminder>` sections that Claude Code injects into user messages are noise for the reader: show them dimmed and collapsed (see table above). A user message that contains only `tool_result` blocks is not shown as your bubble: its results are shown as the tools' bubbles (section 2).
@@ -130,7 +150,7 @@ Besides the main conversation, Claude Code runs sub-agents and sends side reques
 
 - **Main chat:** the conversation with you. Open by default.
 - **Sub-agent chats:** each sub-agent is its own chat, named after its first message (cut to ~40 characters), with "🤖 Sub-agent" as its tag.
-  - In a sub-agent chat, the prompt and every other non-tool user message come from **🤖 Main agent** (left side, its own name color), not from "You": the sub-agent was started by the main agent, not by the user. The header lists the members as "Main agent, Claude, ...".
+  - In a sub-agent chat, the prompt and every other non-tool user message come from **🤖 Main agent** (left side, soft slate bubble, see section 3), not from "You": the sub-agent was started by the main agent, not by the user. The header lists the members as "Main agent, Claude, ...".
 - **Side requests chat:** one chat that collects all side requests, shown compact and dimmed. A side request is anything that is not `POST /v1/messages` with a non-empty `tools` list (small-model calls for titles or classification, `count_tokens`, `HEAD`/`GET` checks), plus forked requests (see below).
 
 A request belongs to an existing chat when its first message is identical to that chat's first message (ignoring `cache_control`). Otherwise it starts a new chat.
@@ -162,14 +182,20 @@ Never show `authorization` or `x-api-key` header values on the page (show the fi
 ### 12. WhatsApp Touches
 Small WhatsApp habits that make the agent's work easier to read. Each one is built from data the dashboard already has.
 
-- **Ticks on your messages (✓✓):** each of your bubbles shows ticks in its corner, the way WhatsApp does: ✓ gray when the request that carries it was sent, ✓✓ gray when the first byte of Claude's reply arrived, ✓✓ blue when the reply is complete. An HTTP or SSE error turns the ticks into a red ⚠️. Hovering over the ticks shows the times (sent, first byte, done).
-- **Pinned plan (`TodoWrite`):** when Claude calls `TodoWrite`, its todo list is pinned at the top of the chat, like a pinned message, under the header: "📌 Plan · 3/5 done". It shows each item with ☐ (pending), ⏳ (in progress) or ✅ (completed), and it updates with every later `TodoWrite` call. It is collapsed to one line by default; clicking it opens the full list. The `TodoWrite` calls themselves still appear in the chat as normal tool calls.
+- **Ticks on your messages (✓✓):** each of your bubbles shows ticks in its corner, the way WhatsApp does: ✓ gray when the request that carries it was sent, ✓✓ gray when the first byte of Claude's reply arrived (the `first_byte` event, see the event schema), ✓✓ blue when the reply is complete. An HTTP or SSE error turns the ticks into a red ⚠️. Hovering over the ticks shows the times (sent, first byte, done).
+- **Pinned plan (`TodoWrite`, `TaskCreate`, `TaskUpdate`):** when Claude calls `TodoWrite`, its todo list is pinned at the top of the chat, like a pinned message, under the header: "📌 Plan · 3/5 done". It shows each item with ☐ (pending), ⏳ (in progress) or ✅ (completed), and it updates with every later `TodoWrite` call. Newer Claude Code versions use `TaskCreate` (adds one item) and `TaskUpdate` (changes an item's status) instead: they feed the same pin, item by item, matched by the task id or subject in their input. It is collapsed to one line by default; clicking it opens the full list. These calls themselves still appear in the chat as normal tool calls.
 - **Files as attachments:**
   - A `Read` result is shown as a document card, like a file sent in WhatsApp: "📄 README.md · 120 lines" with the first 3 lines as a preview. Clicking the card opens the full content (with line numbers).
-  - An `Edit` (or `MultiEdit`) call is shown in the tool's bubble as a diff: removed lines (`old_string`) in rose with `−`, added lines (`new_string`) in green with `+`. A `Write` call is a document card like `Read`, marked "new file".
-- **Turn dividers:** like the "Today" pill in WhatsApp, a centered divider appears before each of your prompts after the first one. Once the turn is finished (Claude's reply has no tool calls), the divider of the turn that just ended shows its summary: "Turn 3 · 4 tool calls · 12 s · $0.04". Turns are counted per chat.
+  - An `Edit` (or `MultiEdit`) call: Claude's call box shows one short line, "✏️ path · −N +M lines". The full diff is in the tool's answer bubble, above its result text: removed lines (`old_string`) in rose with `−`, added lines (`new_string`) in green with `+`. A `Write` call is a document card like `Read`, marked "new file".
+- **Turn dividers:** like the "Today" pill in WhatsApp, a centered divider appears before each of your prompts, the first one included ("Turn 1"). Once the turn is finished (Claude's reply has no tool calls), the divider of the turn that just ended shows its summary: "Turn 3 · 4 tool calls · 12 s · $0.04". Turns are counted per chat. Turn time runs from the request that carries the prompt to the end of the final reply; cost is the sum of the turn's replies.
 - **Context meter:** a small battery icon in the header shows how full the context window is, from the last reply of this chat: (input + cache read + cache creation tokens) ÷ the model's context window, in percent. Gray below 70%, orange from 70%, red from 90% (compaction is near). The context window size comes from a hard-coded table in `dashboard.py` next to the price table; an unknown model shows "?".
 - **Status line:** under the group name, where WhatsApp shows "online", the header shows what is happening now: "Claude is typing..." while a reply streams, "waiting for Read" while a tool is in the group, "waiting for you" after a reply with no tool calls, "idle" when nothing has happened for 60 seconds.
+- **Polls for Claude's questions (`AskUserQuestion`):** when Claude asks you a question with options, the call is shown as a WhatsApp poll card instead of raw JSON: "📊 <question>", then each option as a row with its label and its description in smaller text (a ☐ before each, ☑ when `multiSelect` is true and more than one can be picked). When the answer arrives (the tool's result), the chosen option(s) are marked ✅ and the poll shows "You voted". The chosen option is found by matching the option labels in the result text; an answer that matches no label (typed by you) is shown under the poll as "Other: <text>". If the call has several questions, each is its own poll inside the same card.
+- **Reactions on tool calls:** when a tool's answer arrives, a small reaction appears on the corner of the tool call inside Claude's bubble, the way WhatsApp shows a reaction under a message: ✅ when the result is fine, ❌ when it is an error (`is_error: true`). A call with no answer yet has no reaction. Clicking the reaction scrolls to the tool's answer (the reverse of the quote, section 2).
+- **Forwarded from a sub-agent:** the answer to an `Agent` (or `Task`) call is shown as a forwarded message: the tool's bubble is labeled "↪ Forwarded from <sub-agent chat name>" in gray italics above the text, like a forwarded message in WhatsApp. Clicking the label opens that sub-agent's chat. In the sub-agent's chat, a gray system line at the top says "↪ Started by Main agent in <chat name>" and clicking it goes back to the call. If no matching sub-agent chat exists (it was a side request or the page opened later), the label says "↪ Forwarded from a sub-agent" and does nothing.
+- **Media, links and docs:** like the "Media, links and docs" section in WhatsApp's group info, the group info panel lists every file the chat touched, from `Read`, `Edit`, `MultiEdit` and `Write` calls: the file name, its folder in small gray text, and badges with how many times it was read (📄 N) and edited (✏️ N). The newest file is on top. Clicking a file scrolls to its last card in the chat. URLs from `WebFetch` calls are listed below as "Links".
+- **Starred messages ⭐:** hovering over any bubble shows a ☆ button; clicking it stars the bubble (⭐ in its corner, next to the time). The group info panel lists the starred messages of this chat (sender, first line, time); clicking one scrolls to it. Stars live in browser memory only, like everything else (section 9), and "Clear" removes them.
+- **Dark mode 🌙:** a 🌙 / ☀️ button in the header switches between the light colors and the dark colors (section 3). It starts from the browser's setting (`prefers-color-scheme`), and the choice is kept in `localStorage`, so it survives a reload (the transcript does not).
 - **Terminal bubbles for `Bash`:** the `Bash` call shows its command as `$ <command>`; Bash's answer is a dark terminal-style bubble (see the table in section 3) in a monospace font, with the exit code as a tag ("exit 0" green, anything else rose) when it can be read from the result. Long output is collapsed like any long text.
 
 ---
@@ -213,10 +239,16 @@ Run all three terminals from "How to Run", open the page, then in the agent:
 15. Choose "Only tool Read" in the tool filter: only Read calls and answers are shown, and your messages are still visible, dimmed.
 16. Your message gets ✓, then ✓✓, then blue ✓✓ as the reply arrives and completes.
 17. Ask "make a 3-step todo list and do it": a "📌 Plan" pin appears under the header and its items get ✅ as Claude works.
-18. `Read` results are document cards ("📄 name · N lines"); ask for a small edit: the `Edit` call shows a red/green diff.
+18. `Read` results are document cards ("📄 name · N lines"); ask for a small edit: Claude's `Edit` call shows "✏️ path · −N +M lines" and Edit's answer shows a red/green diff.
 19. Each new prompt starts with a turn divider; after the turn ends it shows tool calls, time and cost.
 20. The header shows the context meter as a percentage and a status line that changes between "typing", "waiting for <tool>" and "waiting for you".
 21. Ask the agent to run `ls`: the call shows `$ ls`, and Bash's answer is a dark terminal bubble.
+22. Ask "ask me which of two colors I prefer, with options": the question is a "📊" poll card with the options as rows; after you answer, your option is marked ✅ and the poll says "You voted".
+23. Every tool call in Claude's bubble gets ✅ when its answer arrives; the call to a missing file (check 7) gets ❌.
+24. In the sub-agent run (check 14), the `Agent` answer in the main chat is labeled "↪ Forwarded from <sub-agent chat name>", and clicking the label opens that chat.
+25. After reading README.md twice and editing one file, the group info panel's "Media, links and docs" lists README.md with 📄 2 and the edited file with ✏️ 1.
+26. Star two bubbles: both show ⭐ and are listed under "Starred messages"; clicking one scrolls to it.
+27. Click 🌙: the page switches to dark colors, every message type is still told apart, and after a reload the page is still dark.
 
 ## Out of Scope (for v1)
 - Free-text search or jumping to a specific message
@@ -245,9 +277,9 @@ Run all three terminals from "How to Run", open the page, then in the agent:
 - Show each message once, split traffic into chats (sections 5, 7)
 - Tool filter, error counter, Clear button, "new messages" button
 - Stats under Claude's bubbles and totals in the group info panel
-- WhatsApp touches: ticks, pinned plan, file cards and diffs, turn dividers, context meter, status line, terminal bubbles (section 12)
+- WhatsApp touches: ticks, pinned plan, file cards and diffs, turn dividers, context meter, status line, terminal bubbles, polls, reactions, forwarded sub-agent answers, media list, starred messages, dark mode (section 12)
 
-**Event schema** (final; `dashboard.py` sends one JSON object per SSE `data:` line):
+**Event schema** (final: three event types, `request`, `first_byte` and `reply`; `dashboard.py` sends one JSON object per SSE `data:` line):
 - **Request**, sent as soon as a request arrives, before it is forwarded:
   ```
   { "type": "request", "id": 7, "data": {
@@ -271,5 +303,9 @@ Run all three terminals from "How to Run", open the page, then in the agent:
       "cost": 0.0123,                // USD, or null for an unknown model
       "context_window": 200000       // tokens, from the table in dashboard.py, or null (section 12)
   } }
+  ```
+- **First byte**, sent as soon as the first chunk of the reply was written back to the agent; same `id` as its request (used for the ✓✓ gray ticks, section 12):
+  ```
+  { "type": "first_byte", "id": 7, "data": { "ttfb_ms": 412 } }
   ```
 - `system`, `tools` and `messages` are `null` when the body has none (for example `GET` or `HEAD`).
