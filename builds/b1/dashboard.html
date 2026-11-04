@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Traffic Dashboard</title>
+<style>
+:root {
+  --bg: #FAFAF8; --card: #FFFFFF; --ink: #24292F; --muted: #6E7781; --line: #E4E2DE;
+  --user-bg: #EAF2FB; --user-bd: #5B8DEF;
+  --asst-bg: #EAF7EE; --asst-bd: #4CAF7A;
+  --call-bg: #FFF4E5; --call-bd: #F0A35E;
+  --res-bg: #EEF6F7;  --res-bd: #5FA8B0;
+  --err-bg: #FDECEC;  --err-bd: #E06C6C;
+  --think-bg: #F3EEFA; --think-bd: #9B7FD1;
+  --sys-bg: #F5F5F4;  --sys-bd: #B0ACA6;
+  --new: #F5B700;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+code, pre, .mono { font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace; font-size: 12.5px; }
+
+/* header */
+header { position: sticky; top: 0; z-index: 10; background: rgba(250,250,248,.96);
+  backdrop-filter: blur(4px); border-bottom: 1px solid var(--line); padding: 10px 20px; }
+.hrow { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+h1 { font-size: 17px; margin: 0; font-weight: 650; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: #bbb; display: inline-block; margin-right: 6px; }
+.dot.on { background: #4CAF7A; }
+.totals { color: var(--muted); font-size: 13px; }
+.toolchips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.chip { font-size: 12px; background: var(--call-bg); border: 1px solid #F3D2AE; border-radius: 10px; padding: 0 8px; }
+.ctrl { display: flex; gap: 10px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+button, select { font: inherit; font-size: 13px; padding: 3px 10px; border-radius: 6px;
+  border: 1px solid var(--line); background: #fff; cursor: pointer; }
+button:hover { background: #f2f2ef; }
+#errBtn { background: #fff; }
+#errBtn.has { background: var(--err-bg); border-color: var(--err-bd); color: #9b2c2c; font-weight: 600; }
+label.tog { font-size: 13px; color: var(--muted); user-select: none; }
+
+main { max-width: 1100px; margin: 0 auto; padding: 22px 20px 80px; }
+.empty { color: var(--muted); text-align: center; padding: 60px 0; }
+
+/* card */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  margin-bottom: 26px; box-shadow: 0 1px 2px rgba(0,0,0,.03); }
+.flash { animation: flash 1.2s ease-out; }
+@keyframes flash { from { box-shadow: 0 0 0 3px rgba(91,141,239,.35); } to { box-shadow: 0 1px 2px rgba(0,0,0,.03); } }
+.card.httperr { border-color: var(--err-bd); }
+.chead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px;
+  border-bottom: 1px solid var(--line); }
+.turn { font-weight: 700; font-size: 15px; }
+.tag { font-size: 11.5px; padding: 1px 7px; border-radius: 9px; background: #F0EFEC; color: #555; }
+.tag.model { background: #EEF0F8; color: #3B4A7A; }
+.tag.ok { background: #E3F4E8; color: #23663D; }
+.tag.bad { background: var(--err-bg); color: #9b2c2c; font-weight: 600; }
+.tag.side { background: #F0EFEC; color: #888; }
+.chead .time { margin-left: auto; color: var(--muted); font-size: 12px; }
+.part { padding: 10px 14px; }
+.plabel { font-size: 11px; letter-spacing: .08em; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+.reply { border-top: 2px dashed var(--line); }
+.foot { padding: 6px 14px 8px; border-top: 1px solid var(--line); color: #8B9096; font-size: 12px; }
+
+/* side requests: compact and dimmed */
+.card.side { opacity: .62; margin-bottom: 14px; }
+.card.side:hover { opacity: 1; }
+.card.side .chead { padding: 6px 12px; }
+.card.side .turn { font-size: 13px; }
+body.hide-side .card.side { display: none; }
+
+/* sections */
+details.sec { background: var(--sys-bg); border-left: 4px solid var(--sys-bd); border-radius: 6px; margin: 6px 0; }
+details.sec > summary { cursor: pointer; padding: 6px 10px; list-style: none; }
+details.sec > summary::-webkit-details-marker { display: none; }
+details.sec > summary::before { content: "▸ "; color: var(--muted); }
+details.sec[open] > summary::before { content: "▾ "; }
+details.sec .body { padding: 4px 10px 10px; }
+.changed { font-size: 11px; background: var(--new); color: #fff; border-radius: 8px; padding: 0 6px; margin-left: 6px; font-weight: 600; }
+.muted { color: var(--muted); }
+.hist { margin: 8px 0 4px; color: var(--muted); font-size: 13px; }
+
+/* messages + blocks */
+.msg { margin: 8px 0; position: relative; }
+.msg.isnew { padding-left: 10px; border-left: 3px solid var(--new); }
+.newtag { font-size: 10.5px; font-weight: 700; color: #9a7300; background: #FFF5D1; border-radius: 6px; padding: 0 5px; margin-left: 6px; }
+.role { font-size: 11.5px; color: var(--muted); margin: 2px 0 3px; }
+.blk { border-left: 4px solid; border-radius: 6px; padding: 7px 10px; margin: 5px 0; }
+.blk .bh { font-size: 12.5px; margin-bottom: 3px; }
+.b-user  { background: var(--user-bg);  border-color: var(--user-bd); }
+.b-asst  { background: var(--asst-bg);  border-color: var(--asst-bd); }
+.b-call  { background: var(--call-bg);  border-color: var(--call-bd); }
+.b-res   { background: var(--res-bg);   border-color: var(--res-bd); }
+.b-err   { background: var(--err-bg);   border-color: var(--err-bd); }
+.b-err .bh { color: #9b2c2c; font-weight: 600; }
+.b-think { background: var(--think-bg); border-color: var(--think-bd); }
+.b-other { background: var(--sys-bg);   border-color: var(--sys-bd); }
+.b-call .bh b { font-size: 14px; }
+.slot { margin: 6px 0 0 14px; }
+.pending { color: var(--muted); font-size: 12.5px; }
+.txt { white-space: pre-wrap; word-break: break-word; margin: 0; }
+.clamp { max-height: 15.5em; overflow: hidden; position: relative; }
+.clamp::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2.5em;
+  background: linear-gradient(transparent, rgba(255,255,255,.85)); }
+.more { font-size: 12px; padding: 1px 8px; margin-top: 4px; }
+details.rem { margin: 4px 0; font-size: 12px; color: #8B9096; }
+details.rem > summary { cursor: pointer; }
+details.rem .txt { font-size: 12px; color: #8B9096; }
+details.think > summary { cursor: pointer; font-size: 12.5px; }
+pre.json { white-space: pre-wrap; word-break: break-word; margin: 2px 0; background: rgba(255,255,255,.55);
+  border-radius: 4px; padding: 6px 8px; }
+.j-key { color: #8250DF; } .j-str { color: #0A6640; } .j-num { color: #B35900; } .j-lit { color: #CF222E; }
+.toolname { font-weight: 600; }
+.tooldef { margin: 6px 0 10px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="hrow">
+    <h1><span id="dot" class="dot" title="live connection"></span>Agent Traffic</h1>
+    <span class="totals" id="totals">waiting for traffic…</span>
+    <div class="ctrl">
+      <button id="errBtn" title="Jump to the next error">⚠️ 0 errors</button>
+      <select id="toolFilter" title="Show only turns that call a tool"><option value="">All turns</option></select>
+      <label class="tog"><input type="checkbox" id="hideSide"> Hide side requests</label>
+      <button id="clearBtn">Clear</button>
+    </div>
+  </div>
+  <div class="toolchips" id="toolchips"></div>
+</header>
+<main>
+  <div id="list"></div>
+  <div class="empty" id="empty">No traffic yet. Run the agent with <code>ANTHROPIC_BASE_URL=http://localhost:<span id="port"></span> claude</code></div>
+</main>
+<script>
+"use strict";
+// ------------------------------------------------------------------ state
+let S;
+function resetState() {
+  S = {
+    cards: new Map(),        // id -> card
+    results: new Map(),      // tool_use_id -> {block, turn}
+    slots: new Map(),        // tool_use_id -> [{el, card}]
+    callNames: new Map(),    // tool_use_id -> tool name
+    callTurn: new Map(),     // tool_use_id -> turn id where it was requested
+    errors: new Set(),       // distinct error keys
+    toolUsage: new Map(),    // tool name -> count
+    totals: { turns: 0, inp: 0, out: 0, cr: 0, cw: 0, cost: 0, costKnown: true },
+    errIdx: -1,
+  };
+}
+resetState();
+const $ = (id) => document.getElementById(id);
+$("port").textContent = location.port || "80";
+
+// ------------------------------------------------------------------ helpers
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
+  return e;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function fmtN(n) { return (n || 0).toLocaleString("en-US"); }
+function fmtMs(ms) { return ms == null ? "–" : ms < 1000 ? ms + " ms" : (ms / 1000).toFixed(1) + " s"; }
+function fmtCost(c) { return c == null ? "n/a" : "$" + c.toFixed(c < 0.01 ? 4 : 3); }
+function stripCache(v) {
+  if (Array.isArray(v)) return v.map(stripCache);
+  if (v && typeof v === "object") {
+    const o = {};
+    for (const k of Object.keys(v)) if (k !== "cache_control") o[k] = stripCache(v[k]);
+    return o;
+  }
+  return v;
+}
+function canon(v) { return JSON.stringify(stripCache(v)); }
+function lineCount(s) { return s ? s.split("\n").length : 0; }
+
+function highlightJSON(obj) {
+  const s = JSON.stringify(obj, null, 2);
+  if (s === undefined) return "";
+  return esc(s).replace(/(&quot;(?:\\.|[^\\&]|&(?!quot;))*?&quot;)(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g,
+    (m, str, colon, lit) => {
+      if (str) return colon ? `<span class="j-key">${str}</span>${colon}` : `<span class="j-str">${str}</span>`;
+      if (lit) return `<span class="j-lit">${m}</span>`;
+      return `<span class="j-num">${m}</span>`;
+    });
+}
+
+// Long content is clamped with a "show all" button; nothing is ever cut.
+function clampable(node, lines, chars) {
+  const wrap = el("div");
+  wrap.appendChild(node);
+  if (lines > 14 || chars > 1800) {
+    node.classList.add("clamp");
+    const b = el("button", "more", `Show all (${fmtN(lines)} lines)`);
+    b.onclick = () => {
+      const c = node.classList.toggle("clamp");
+      b.textContent = c ? `Show all (${fmtN(lines)} lines)` : "Show less";
+    };
+    wrap.appendChild(b);
+  }
+  return wrap;
+}
+function textNode(text) {
+  const p = el("pre", "txt", text);
+  return clampable(p, lineCount(text), text.length);
+}
+function jsonNode(obj) {
+  const p = el("pre", "json");
+  p.innerHTML = highlightJSON(obj);
+  const s = JSON.stringify(obj, null, 2) || "";
+  return clampable(p, lineCount(s), s.length);
+}
+// <details> whose body is built only when first opened (keeps 50+ cards fast).
+function lazyDetails(cls, summaryNode, build, open) {
+  const d = el("details", cls);
+  const sm = el("summary");
+  if (typeof summaryNode === "string") sm.textContent = summaryNode; else sm.appendChild(summaryNode);
+  d.appendChild(sm);
+  let built = false;
+  const ensure = () => { if (!built) { built = true; const b = el("div", "body"); build(b); d.appendChild(b); } };
+  d.addEventListener("toggle", () => { if (d.open) ensure(); });
+  if (open) { d.open = true; ensure(); }
+  return d;
+}
+
+// ------------------------------------------------------------------ blocks
+const REM_RE = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
+
+function userTextBlock(text) {
+  const frag = document.createDocumentFragment();
+  let last = 0, m;
+  const visible = [];
+  const reminders = [];
+  REM_RE.lastIndex = 0;
+  while ((m = REM_RE.exec(text))) {
+    visible.push(text.slice(last, m.index));
+    reminders.push(m[0]);
+    last = m.index + m[0].length;
+  }
+  visible.push(text.slice(last));
+  const main = visible.join("").trim();
+  if (main) {
+    const b = el("div", "blk b-user");
+    b.appendChild(el("div", "bh", "👤 User"));
+    b.appendChild(textNode(main));
+    frag.appendChild(b);
+  }
+  for (const r of reminders) {
+    const inner = r.replace(/^<system-reminder>\s*/, "").replace(/\s*<\/system-reminder>$/, "");
+    const first = inner.split("\n").find(l => l.trim()) || "";
+    frag.appendChild(lazyDetails("rem", `system-reminder · ${first.slice(0, 90)}${first.length > 90 ? "…" : ""}`,
+      b => b.appendChild(el("pre", "txt", inner))));
+  }
+  return frag;
+}
+
+function resultContentNode(content) {
+  const box = el("div");
+  if (typeof content === "string") { box.appendChild(textNode(content)); return box; }
+  if (!Array.isArray(content)) { if (content != null) box.appendChild(jsonNode(content)); else box.appendChild(el("span", "muted", "(empty)")); return box; }
+  for (const c of content) {
+    if (c.type === "text") box.appendChild(textNode(c.text || ""));
+    else if (c.type === "image") box.appendChild(el("div", "muted", "🖼 [image]"));
+    else box.appendChild(jsonNode(c));
+  }
+  if (!content.length) box.appendChild(el("span", "muted", "(empty)"));
+  return box;
+}
+
+function toolResultBlock(b, turnLabel) {
+  const err = !!b.is_error;
+  const box = el("div", "blk " + (err ? "b-err" : "b-res"));
+  const name = S.callNames.get(b.tool_use_id);
+  const h = el("div", "bh");
+  h.innerHTML = (err ? "⚠️ Error result" : "↩ Result") + (name ? ` · <span class="toolname">${esc(name)}</span>` : "") +
+    (turnLabel ? ` <span class="muted">(${esc(turnLabel)})</span>` : "");
+  box.appendChild(h);
+  box.appendChild(resultContentNode(b.content));
+  return box;
+}
+
+function toolCallBlock(b, card, withSlot) {
+  const box = el("div", "blk b-call");
+  const h = el("div", "bh");
+  h.innerHTML = `🔧 Tool call: <b>${esc(b.name || "?")}</b>` + (b.type !== "tool_use" ? ` <span class="muted">(${esc(b.type)})</span>` : "");
+  box.appendChild(h);
+  box.appendChild(jsonNode(b.input == null ? {} : b.input));
+  if (withSlot && b.id) {
+    const slot = el("div", "slot");
+    box.appendChild(slot);
+    const r = S.results.get(b.id);
+    fillSlot(slot, card, b.id, r);
+    if (!S.slots.has(b.id)) S.slots.set(b.id, []);
+    S.slots.get(b.id).push({ el: slot, card });
+  }
+  return box;
+}
+
+function fillSlot(slot, card, id, r) {
+  slot.textContent = "";
+  if (!r) { slot.appendChild(el("div", "pending", "⏳ Result pending")); return; }
+  const node = toolResultBlock(r.block, "from Turn #" + r.turn);
+  if (r.block.is_error) { node.classList.add("err-anchor"); card.hasError = true; }
+  slot.appendChild(node);
+}
+
+function renderBlock(b, role, card, inReply) {
+  if (typeof b === "string") b = { type: "text", text: b };
+  switch (b.type) {
+    case "text":
+      if (role === "user") return userTextBlock(b.text || "");
+      { const x = el("div", "blk b-asst"); x.appendChild(el("div", "bh", "🤖 Assistant")); x.appendChild(textNode(b.text || "")); return x; }
+    case "tool_use": case "server_tool_use":
+      return toolCallBlock(b, card, inReply);
+    case "tool_result":
+      return toolResultBlock(b, null);
+    case "thinking": case "redacted_thinking": {
+      const t = b.thinking || "";
+      const label = b.type === "redacted_thinking" ? "💭 Thinking (redacted)" : t ? `💭 Thinking · ${fmtN(lineCount(t))} line${lineCount(t) === 1 ? "" : "s"}` : "💭 Thinking (hidden by the API)";
+      const x = el("div", "blk b-think");
+      x.appendChild(lazyDetails("think", label, d => d.appendChild(el("pre", "txt", t || "(no text)"))));
+      return x;
+    }
+    case "image": { const x = el("div", "blk b-user"); x.appendChild(el("div", "bh", "🖼 Image (not shown)")); return x; }
+    default: {
+      const x = el("div", "blk b-other");
+      x.appendChild(el("div", "bh", "◻︎ " + (b.type || "block")));
+      x.appendChild(jsonNode(b));
+      return x;
+    }
+  }
+}
+
+function renderMessage(m, card, isNew) {
+  const w = el("div", "msg" + (isNew ? " isnew" : ""));
+  const r = el("div", "role");
+  const role = m.role || "?";
+  r.textContent = role === "user" ? "user message" : role === "assistant" ? "assistant message" : role + " message";
+  if (isNew) r.appendChild(el("span", "newtag", "NEW"));
+  w.appendChild(r);
+  const content = typeof m.content === "string" ? [{ type: "text", text: m.content }] : (m.content || []);
+  for (const b of content) w.appendChild(renderBlock(b, role, card, false));
+  return w;
+}
+
+// ------------------------------------------------------------------ request
+function isMainRequest(d) {
+  const p = (d.path || "").split("?")[0];
+  const msgs = d.method === "POST" && p.endsWith("/v1/messages");
+  return msgs && Array.isArray(d.tools) && d.tools.length > 0;
+}
+
+function systemText(sys) {
+  if (sys == null) return "";
+  if (typeof sys === "string") return sys;
+  return sys.map(b => b.text != null ? b.text : JSON.stringify(b)).join("\n\n");
+}
+
+// Find the previous request of the same conversation (same first message).
+function findPrev(card) {
+  const msgs = card.msgCanon;
+  if (!msgs.length) return null;
+  let best = null;
+  for (const c of S.cards.values()) {
+    if (c === card || c.side || !c.msgCanon || c.id > card.id) continue;
+    if (c.msgCanon[0] === msgs[0] && c.msgCanon.length <= msgs.length && (!best || c.id > best.id)) best = c;
+  }
+  return best;
+}
+
+function onRequest(id, d) {
+  $("empty").style.display = "none";
+  const side = !isMainRequest(d);
+  const card = { id, req: d, side, toolsUsed: new Set(), hasError: false, el: el("div", "card" + (side ? " side" : "")) };
+  S.cards.set(id, card);
+  card.msgCanon = Array.isArray(d.messages) ? d.messages.map(canon) : [];
+  card.sysCanon = canon(d.system || null);
+  card.toolsCanon = canon(d.tools || null);
+
+  // Register tool names from assistant messages, and results from user messages.
+  const msgs = Array.isArray(d.messages) ? d.messages : [];
+  for (const m of msgs) {
+    if (!Array.isArray(m.content)) continue;
+    for (const b of m.content) {
+      if ((b.type === "tool_use" || b.type === "server_tool_use") && b.id && !S.callNames.has(b.id)) S.callNames.set(b.id, b.name);
+    }
+  }
+  const newResults = [];
+  for (const m of msgs) {
+    if (!Array.isArray(m.content)) continue;
+    for (const b of m.content) {
+      if (b.type === "tool_result" && b.tool_use_id && !S.results.has(b.tool_use_id)) {
+        S.results.set(b.tool_use_id, { block: b, turn: id });
+        newResults.push(b);
+      }
+    }
+  }
+
+  // Header
+  const head = el("div", "chead");
+  head.appendChild(el("span", "turn", "Turn #" + id));
+  if (d.model) head.appendChild(el("span", "tag model", d.model));
+  if (side) head.appendChild(el("span", "tag side", "side request"));
+  head.appendChild(el("span", "tag", d.method + " " + d.path));
+  card.statusTag = el("span", "tag", "⏳ waiting");
+  head.appendChild(card.statusTag);
+  head.appendChild(el("span", "time", new Date(d.started_at || Date.now()).toLocaleTimeString()));
+  card.el.appendChild(head);
+
+  // Request part
+  const reqPart = el("div", "part req");
+  const build = (box) => buildRequest(box, card, d, msgs);
+  if (side) reqPart.appendChild(lazyDetails("sec", sideSummary(d), build));
+  else { reqPart.appendChild(el("div", "plabel", "REQUEST")); build(reqPart); }
+  card.el.appendChild(reqPart);
+
+  // Reply part (filled later)
+  card.replyEl = el("div", "part reply");
+  card.replyEl.appendChild(el("div", "plabel", "REPLY"));
+  card.replyEl.appendChild(el("div", "pending", "⏳ waiting for reply…"));
+  card.el.appendChild(card.replyEl);
+  card.footEl = el("div", "foot", "");
+  card.el.appendChild(card.footEl);
+
+  $("list").prepend(card.el);
+  card.el.classList.add("flash");
+
+  // Attach new results to their tool calls shown in earlier cards.
+  for (const b of newResults) {
+    for (const s of S.slots.get(b.tool_use_id) || []) fillSlot(s.el, s.card, b.tool_use_id, S.results.get(b.tool_use_id));
+    if (b.is_error) S.errors.add("tool:" + b.tool_use_id);
+  }
+  S.totals.turns++;
+  applyFilters(card);
+  updateHeader();
+}
+
+function sideSummary(d) {
+  const msgs = Array.isArray(d.messages) ? d.messages : [];
+  let snippet = "";
+  const last = msgs[msgs.length - 1];
+  if (last) {
+    const c = typeof last.content === "string" ? last.content : (last.content || []).map(b => b.text || "").join(" ");
+    snippet = c.replace(REM_RE, "").replace(/\s+/g, " ").trim().slice(0, 110);
+  }
+  return snippet ? `request · “${snippet}${snippet.length >= 110 ? "…" : ""}”` : "request details";
+}
+
+function buildRequest(box, card, d, msgs) {
+  if (!d.messages && !d.system && !d.tools) {
+    if (d.raw_body) box.appendChild(textNode(d.raw_body));
+    else box.appendChild(el("div", "muted", "(no body)"));
+    box.appendChild(headersDetails(d));
+    return;
+  }
+  const prev = card.side ? null : findPrev(card);
+
+  // System prompt
+  const sys = systemText(d.system);
+  const sSum = el("span");
+  sSum.textContent = sys ? `⚙️ System Prompt · ${fmtN(lineCount(sys))} line${lineCount(sys) === 1 ? "" : "s"}` : "⚙️ System Prompt · (none)";
+  if (prev && prev.sysCanon !== card.sysCanon) sSum.appendChild(el("span", "changed", "changed"));
+  box.appendChild(lazyDetails("sec", sSum, b => {
+    if (Array.isArray(d.system) && d.system.length > 1) {
+      d.system.forEach((blk, i) => { b.appendChild(el("div", "muted", `block ${i + 1} of ${d.system.length}`)); b.appendChild(el("pre", "txt", blk.text != null ? blk.text : JSON.stringify(blk, null, 2))); });
+    } else b.appendChild(el("pre", "txt", sys || "(none)"));
+  }));
+
+  // Tools
+  const tools = Array.isArray(d.tools) ? d.tools : [];
+  const names = tools.map(t => t.name || t.type);
+  const tSum = el("span");
+  tSum.textContent = `⚙️ Tools Available: ${tools.length}` + (names.length ? " — " + names.join(", ") : "");
+  if (prev && prev.toolsCanon !== card.toolsCanon) tSum.appendChild(el("span", "changed", "changed"));
+  box.appendChild(lazyDetails("sec", tSum, b => {
+    for (const t of tools) {
+      const w = el("div", "tooldef");
+      w.appendChild(el("div", "toolname", "🔧 " + (t.name || t.type)));
+      if (t.description) w.appendChild(textNode(t.description));
+      if (t.input_schema) w.appendChild(jsonNode(t.input_schema));
+      b.appendChild(w);
+    }
+  }));
+
+  // History diff
+  let common = 0;
+  if (prev) {
+    const a = prev.msgCanon, c = card.msgCanon;
+    while (common < a.length && common < c.length && a[common] === c[common]) common++;
+  }
+  const nNew = msgs.length - common;
+  const hist = el("div", "hist");
+  if (card.side) hist.textContent = `🗂 ${msgs.length} message${msgs.length === 1 ? "" : "s"}`;
+  else if (prev) hist.textContent = `🗂 History: same as Turn #${prev.id} + ${nNew} new message${nNew === 1 ? "" : "s"}` + (common < prev.msgCanon.length ? ` (${prev.msgCanon.length - common} earlier message${prev.msgCanon.length - common === 1 ? "" : "s"} changed)` : "");
+  else hist.textContent = `🗂 History: new conversation, ${msgs.length} message${msgs.length === 1 ? "" : "s"}`;
+  box.appendChild(hist);
+  if (common > 0) {
+    box.appendChild(lazyDetails("sec", `Show full history (${common} earlier message${common === 1 ? "" : "s"})`, b => {
+      for (let i = 0; i < common; i++) b.appendChild(renderMessage(msgs[i], card, false));
+    }));
+  }
+  // New messages, always visible
+  for (let i = common; i < msgs.length; i++) box.appendChild(renderMessage(msgs[i], card, !card.side));
+
+  // Params + headers (dim, collapsed)
+  box.appendChild(lazyDetails("sec", "Request parameters", b => b.appendChild(jsonNode(d.params || {}))));
+  box.appendChild(headersDetails(d));
+}
+
+function headersDetails(d) {
+  return lazyDetails("sec", "HTTP headers", b => b.appendChild(jsonNode(d.headers || {})));
+}
+
+// ------------------------------------------------------------------ reply
+function onReply(id, r) {
+  const card = S.cards.get(id);
+  if (!card) return;
+  card.reply = r;
+  const box = card.replyEl;
+  box.textContent = "";
+  const lab = el("div", "plabel", "REPLY" + (r.stop_reason ? " · " + r.stop_reason : ""));
+  box.appendChild(lab);
+
+  const httpErr = r.status >= 400 || r.error;
+  card.statusTag.className = "tag " + (httpErr ? "bad" : "ok");
+  card.statusTag.textContent = httpErr ? `⚠️ ${r.status}` : `${r.status}`;
+  if (httpErr) {
+    card.hasError = true;
+    card.el.classList.add("httperr", "err-anchor");
+    S.errors.add("http:" + id);
+    const x = el("div", "blk b-err");
+    x.appendChild(el("div", "bh", `⚠️ Error (HTTP ${r.status})`));
+    x.appendChild(jsonNode(r.error || r.other || {}));
+    box.appendChild(x);
+  }
+
+  const content = Array.isArray(r.content) ? r.content : [];
+  for (const b of content) {
+    if ((b.type === "tool_use" || b.type === "server_tool_use") && b.id) {
+      S.callNames.set(b.id, b.name);
+      S.callTurn.set(b.id, id);
+      card.toolsUsed.add(b.name);
+      S.toolUsage.set(b.name, (S.toolUsage.get(b.name) || 0) + 1);
+      addToolOption(b.name);
+    }
+    box.appendChild(renderBlock(b, "assistant", card, true));
+  }
+  if (!content.length && !httpErr) {
+    if (r.other != null) box.appendChild(typeof r.other === "string" ? textNode(r.other) : jsonNode(r.other));
+    else box.appendChild(el("div", "muted", "(empty reply)"));
+  }
+
+  // Footer stats
+  const u = r.usage || {};
+  card.footEl.textContent =
+    `in ${fmtN(u.input_tokens)} | cache read ${fmtN(u.cache_read_input_tokens)} | cache write ${fmtN(u.cache_creation_input_tokens)} | out ${fmtN(u.output_tokens)}` +
+    ` | first byte ${fmtMs(r.ttfb_ms)} · total ${fmtMs(r.total_ms)} | ${fmtCost(r.cost)}`;
+  const t = S.totals;
+  t.inp += u.input_tokens || 0; t.out += u.output_tokens || 0;
+  t.cr += u.cache_read_input_tokens || 0; t.cw += u.cache_creation_input_tokens || 0;
+  if (r.cost != null) t.cost += r.cost; else if ((u.input_tokens || u.output_tokens)) t.costKnown = false;
+  applyFilters(card);
+  updateHeader();
+}
+
+// ------------------------------------------------------------------ header + filters
+function addToolOption(name) {
+  const sel = $("toolFilter");
+  for (const o of sel.options) if (o.value === name) return;
+  const o = el("option", null, "Only turns using " + name);
+  o.value = name;
+  sel.appendChild(o);
+}
+
+function applyFilters(card) {
+  const f = $("toolFilter").value;
+  const list = card ? [card] : S.cards.values();
+  for (const c of list) c.el.style.display = (!f || c.toolsUsed.has(f)) ? "" : "none";
+}
+
+function updateHeader() {
+  const t = S.totals;
+  $("totals").textContent = `${t.turns} turns · in ${fmtN(t.inp)} · cache read ${fmtN(t.cr)} · cache write ${fmtN(t.cw)} · out ${fmtN(t.out)} · ${fmtCost(t.cost)}${t.costKnown ? "" : "+"}`;
+  const chips = $("toolchips");
+  chips.textContent = "";
+  [...S.toolUsage.entries()].sort((a, b) => b[1] - a[1]).forEach(([n, c]) => chips.appendChild(el("span", "chip", `🔧 ${n} ×${c}`)));
+  const n = S.errors.size;
+  const b = $("errBtn");
+  b.textContent = `⚠️ ${n} error${n === 1 ? "" : "s"}`;
+  b.classList.toggle("has", n > 0);
+}
+
+$("errBtn").onclick = () => {
+  const anchors = [...document.querySelectorAll(".err-anchor")].filter(a => a.offsetParent !== null);
+  if (!anchors.length) return;
+  S.errIdx = (S.errIdx + 1) % anchors.length;
+  const a = anchors[S.errIdx];
+  a.scrollIntoView({ behavior: "smooth", block: "center" });
+  a.classList.remove("flash"); void a.offsetWidth; a.classList.add("flash");
+};
+$("toolFilter").onchange = () => applyFilters();
+$("hideSide").onchange = (e) => document.body.classList.toggle("hide-side", e.target.checked);
+$("clearBtn").onclick = () => {
+  $("list").textContent = "";
+  const sel = $("toolFilter");
+  while (sel.options.length > 1) sel.remove(1);
+  resetState();
+  updateHeader();
+  $("totals").textContent = "cleared · waiting for traffic…";
+  $("empty").style.display = "";
+};
+
+// ------------------------------------------------------------------ live stream
+function connect() {
+  const es = new EventSource("/dashboard/events");
+  es.onopen = () => $("dot").classList.add("on");
+  es.onerror = () => $("dot").classList.remove("on");
+  es.onmessage = (e) => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch (_) { return; }
+    try {
+      if (ev.type === "request") onRequest(ev.id, ev.data);
+      else if (ev.type === "reply") onReply(ev.id, ev.data);
+    } catch (err) { console.error("dashboard render error", err, ev); }
+  };
+}
+connect();
+</script>
+</body>
+</html>
