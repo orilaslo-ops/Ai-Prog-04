@@ -1,7 +1,7 @@
 # Agent Traffic Dashboard
 
 ## Overview
-A live, read-only browser dashboard that displays messages flowing between an agent (Claude Code) and the Claude API in real time. As the agent works, the user watches the full back-and-forth: their prompts, Claude's responses, tool calls, and tool results, formatted to be scannable at a glance.
+A live, read-only browser dashboard that displays messages flowing between an agent (Claude Code) and the Claude API in real time. As the agent works, the user watches the full back-and-forth: their prompts, Claude's responses, tool calls, and tool results, shown as a WhatsApp-style group chat so it is scannable at a glance.
 
 ## Design Constraints
 **Readability is the primary goal.** The dashboard is useless if the user cannot distinguish message types in a crowded transcript as the conversation grows. Every UI choice must serve legibility.
@@ -25,99 +25,128 @@ ANTHROPIC_BASE_URL=http://localhost:8042 claude                # terminal 3: the
 - Listen on `127.0.0.1` only.
 
 ## Core Requirement
-The dashboard shows every request sent and every reply received, **newest first**.
+The dashboard looks and works like a **WhatsApp group chat**. The agent's work is shown as a conversation in a group: you, Claude, and the tools Claude calls are the members, and every message flowing between the agent and the API appears as a chat message, **oldest at the top, newest at the bottom**, like any chat app.
 
-**Exchange card.** Each request and its reply are shown together as one card ("Turn #12"), so they never get separated in the newest-first list.
+The dashboard is read-only: there is no message input box.
 
-**Request part displays:**
-- System instructions (in full, collapsible if long). Note: `system` is an array of blocks, not a string.
-- Tool definitions (available to the model)
-- Conversation so far (all prior messages)
-- New message being sent to the model
+**Members of the group:**
+- **👤 You:** the user's text (prompts typed into Claude Code).
+- **🤖 Claude:** the model. Its text replies, its thinking, and its tool calls.
+- **🔧 Each tool** (`Read`, `Bash`, `Edit`, ...): a temporary member. It joins the group when Claude calls it, answers with its result, and leaves (see section 2).
 
-**Reply part displays:**
-- Model's text response
-- Tool calls requested
-- Each tool call shown beside its result (when the result arrives in the next request)
+Claude Code itself (the agent) is **not** a member: it is the group.
+
+**What the chat shows:**
+- Each message from the user, from Claude, and from each tool, as a bubble from its sender
+- Tools joining and leaving, as centered system lines
+- Each tool result as a reply that quotes the tool call it answers
+- The system prompt and tool definitions in the group info panel (section 1)
 
 **Global features:**
 - Page updates live as messages arrive
 - Long text collapsible for readability
 - JSON formatted legibly (indented, syntax highlighted)
-- Parts of a request clearly separated
 - Statistics welcome (tokens, cost, latency, tool usage) but secondary to message content
 
 ---
 
 ## Design Decisions
 
-### 1. Request Layout
-Each request shows: system instructions → tool definitions → conversation history → new message.
+### 1. Layout
+The page has the shape of WhatsApp Web:
 
-**Collapse strategy:**
-- **System instructions:** Collapsed by default. Heading "System Prompt" + line count. Click to expand.
-- **Tool definitions:** Collapsed by default. Heading "Tools Available: N" with tool names as a comma-separated list. Click to see full schemas.
-- **Conversation history:** Shown as a diff against the previous request (see section 5): "History: same as Turn #11 + 2 new messages". Only the new messages are shown expanded; the full history is one click away.
-- **New message:** Always visible (it's what's being sent now).
+- **Chat list (left sidebar):** one row per chat (section 7). Each row shows the chat name, the last message preview, its time, and an unread counter. The main conversation is open by default.
+- **Chat header (top):** the group name ("Claude Code"), the model name as a tag, and the members currently in the group ("You, Claude, Read"). Clicking the header opens the group info panel.
+- **Group info panel (right side, closed by default):**
+  - **System Prompt** (collapsed, heading + line count; click to expand the full text). Note: `system` is an array of blocks, not a string.
+  - **Tools Available: N** with the tool names as a comma-separated list; click to see the full schemas.
+  - Totals for this chat (tokens, cost) and how many times each tool was called.
+- **Chat area (center):** the messages, oldest at the top, newest at the bottom.
 
-### 2. Tool Call ↔ Result Correlation
-Tool calls appear in the reply; results come in the next request. They are matched by `tool_use.id` ↔ `tool_result.tool_use_id`, and each tool call shows its result below it when available.
+**Scrolling:** when the user is at the bottom, new messages scroll into view automatically. When the user has scrolled up to read, the view stays where it is and a "↓ N new messages" button appears at the bottom; clicking it jumps down.
+
+### 2. Tools Join, Answer, and Leave
+Tool calls appear in Claude's reply; results come in the next request. They are matched by `tool_use.id` ↔ `tool_result.tool_use_id`.
+
+For **every** tool call (not only the first time a tool is used):
+1. Claude's bubble shows the call: tool name in bold and its input.
+2. A centered system line: "🔧 Read joined the group".
+3. While the result has not arrived: "Read is typing..." at the bottom of the chat.
+4. The tool's own bubble with the result, as a **reply that quotes the call** (a small quoted box at the top of the bubble with the tool name and a one-line summary of the input; clicking it scrolls to the call).
+5. A centered system line: "🔧 Read left the group".
+
+If Claude calls several tools in one reply, each one joins, answers, and leaves on its own. The header's member list shows the tools that are currently in the group.
 
 **Format:**
 ```
-🔧 Tool Call: Read
-  Input: { "file_path": "..." }
-  ↩ Result (from Turn #13): "..."
+🤖 Claude
+   🔧 Read  { "file_path": "README.md" }
+        ── 🔧 Read joined the group ──
+🔧 Read
+   ┃ Claude: Read README.md
+   # Project title ...
+        ── 🔧 Read left the group ──
 ```
 
-**States:**
-- Tool call with result: shown together
-- Tool call still pending (no result yet): shown with "⏳ Result pending"
-- Tool call that errored (`is_error: true`): result highlighted in red with the error message prominent
+**Error result** (`is_error: true`): the tool's bubble is rose with the error message prominent (section 3), and it still leaves the group afterwards.
 
 ### 3. Visual Encoding (colors)
-Every message type has its own soft, pleasant color and icon, so types can be told apart without a legend. Colors are muted pastels with a stronger left border of the same hue; text stays dark and readable.
+Every message type has its own soft, pleasant color and icon, so types can be told apart without a legend. Bubbles have rounded corners, muted pastel backgrounds, and a thin border of the same hue; text stays dark and readable.
 
-| Type | Background | Left border | Icon |
+**Alignment:** your messages are on the **right**, like your own messages in WhatsApp. Messages from Claude and from tools are on the **left**, with the sender name in bold above the bubble. Each tool name gets its own name color (chosen from a fixed list by the tool name, so `Read` always has the same color).
+
+| Type | Background | Border | Icon |
 |---|---|---|---|
-| User prompt (user text) | `#EAF2FB` soft blue | `#5B8DEF` | 👤 |
-| Model text (assistant) | `#EAF7EE` soft green | `#4CAF7A` | 🤖 |
-| Tool call (`tool_use`) | `#FFF4E5` soft peach | `#F0A35E` | 🔧 (tool name in bold) |
-| Tool result (`tool_result`) | `#EEF6F7` soft teal | `#5FA8B0` | ↩ |
+| Your prompt (user text) | `#EAF2FB` soft blue | `#5B8DEF` | 👤 |
+| Claude text (assistant) | `#EAF7EE` soft green | `#4CAF7A` | 🤖 |
+| Tool call (`tool_use`, inside Claude's bubble) | `#FFF4E5` soft peach | `#F0A35E` | 🔧 (tool name in bold) |
+| Tool result (tool's own bubble) | `#EEF6F7` soft teal | `#5FA8B0` | ↩ |
 | Tool result with error | `#FDECEC` soft rose | `#E06C6C` | ⚠️ |
-| Thinking (`thinking`) | `#F3EEFA` soft lavender | `#9B7FD1` | 💭 (collapsed) |
-| System prompt / tool definitions | `#F5F5F4` warm gray | `#B0ACA6` | ⚙️ (collapsed) |
-| `<system-reminder>` text inside user messages | dimmed, smaller font | none | collapsed |
+| Thinking (`thinking`, inside Claude's bubble) | `#F3EEFA` soft lavender | `#9B7FD1` | 💭 (collapsed) |
+| System lines (joined / left / changes) | none, centered gray pill | none | small gray text |
+| `<system-reminder>` text inside your messages | dimmed, smaller font | none | collapsed |
 
-Page background is an off-white (`#FAFAF8`). Whitespace between cards is generous.
+Chat background is an off-white (`#FAFAF8`). Whitespace between bubbles is generous.
 
 ### 4. Content Blocks
-Messages contain arrays of content blocks. The dashboard must handle at least: `text`, `tool_use`, `tool_result`, `thinking`, and `image` (shown as a placeholder). `<system-reminder>...</system-reminder>` sections that Claude Code injects into user messages are noise for the reader: show them dimmed and collapsed (see table above).
+Messages contain arrays of content blocks. The dashboard must handle at least: `text`, `tool_use`, `tool_result`, `thinking`, and `image` (shown as a placeholder). `<system-reminder>...</system-reminder>` sections that Claude Code injects into user messages are noise for the reader: show them dimmed and collapsed (see table above). A user message that contains only `tool_result` blocks is not shown as your bubble: its results are shown as the tools' bubbles (section 2).
 
-### 5. What Changed Since the Previous Request
-Every request resends the whole conversation, so the useful information is the difference. Each request card marks which messages are new compared to the previous request of the same conversation, and highlights only those. If the system prompt or tool list changed from the previous request, show a small "changed" badge on that section.
+### 5. Show Each Message Once
+Every request resends the whole conversation. The chat shows each message **only once**: when a request arrives, only the messages that are new compared to the previous request of the same chat are added to the chat.
+
+- If the system prompt or the tool list changed from the previous request, add a centered system line ("⚙️ System prompt changed" / "⚙️ Tools changed") and mark the section in the group info panel with a "changed" badge.
+- If earlier messages changed (for example after compaction), add a centered system line "⚙️ History was rewritten" and continue from there.
 
 ### 6. Streaming Replies
 Claude Code sends `"stream": true`, so replies arrive as SSE events (`message_start`, `content_block_start`, `content_block_delta` with `text_delta` / `input_json_delta` / `thinking_delta`, `content_block_stop`, `message_delta`, `message_stop`). `dashboard.py` reassembles them into a complete reply: full text blocks and tool calls with their complete parsed JSON input. Raw `data:` lines are never shown as the reply. Non-streamed (plain JSON) replies are also supported.
 
-### 7. Side Requests
-Besides the main conversation, Claude Code sends side requests (to a small model for titles or classification, `count_tokens`, `HEAD`/`GET` checks). Every card shows the model name as a tag. Side requests are shown in a compact, dimmed form, and a "Hide side requests" toggle at the top hides them.
+While a reply is streaming, the chat shows "Claude is typing..." at the bottom. When the reply is complete, Claude's bubble replaces it.
+
+### 7. Chats: Main, Sub-agents, and Side Requests
+Besides the main conversation, Claude Code runs sub-agents and sends side requests. Each one gets its own chat in the chat list, like separate groups in WhatsApp:
+
+- **Main chat:** the conversation with you. Open by default.
+- **Sub-agent chats:** each sub-agent is its own chat, named after its first message (cut to ~40 characters), with "🤖 Sub-agent" as its tag.
+- **Side requests chat:** one chat that collects all side requests, shown compact and dimmed. A side request is anything that is not `POST /v1/messages` with a non-empty `tools` list (small-model calls for titles or classification, `count_tokens`, `HEAD`/`GET` checks).
+
+A request belongs to an existing chat when its first message is identical to that chat's first message (ignoring `cache_control`). Otherwise it starts a new chat.
 
 ### 8. Included Features
-- **Tool filter:** Dropdown at the top. "All" (default) or "Only turns using tool X". Updates the view in real time.
-- **Error highlighting:** Tool results with `is_error: true` and HTTP errors (status ≥ 400) are shown in rose with an error icon. A counter in the header ("⚠️ 3 errors") jumps to the next error when clicked. Errors do **not** change the newest-first order.
-- **Stats:** Per-card footer: input tokens | cache read tokens | cache creation tokens | output tokens | latency (time to first byte and total) | cost. Muted gray, secondary to the content. Header shows totals and tool usage counts per tool.
+- **Message details:** every Claude bubble has a small ⓘ button that opens the full request behind it (model, parameters, HTTP headers, full JSON), collapsed by default. Nothing forces the user to read it, but every part of a request stays reachable.
+- **Tool filter:** Dropdown in the chat header. "All" (default) or "Only tool X": shows only Claude's calls to tool X and tool X's answers (with their join/leave lines). Updates the view in real time.
+- **Error highlighting:** Tool results with `is_error: true` are rose tool bubbles. HTTP errors (status ≥ 400) or an `error` SSE event appear as a rose bubble from Claude with the status and error message. A counter in the header ("⚠️ 3 errors") jumps to the next error when clicked. Errors do **not** change the order of the chat. Chats with errors show a ⚠️ in the chat list.
+- **Stats:** under each Claude bubble, in small muted gray text where WhatsApp shows the time: clock time | input tokens | cache read | cache creation | output tokens | latency (time to first byte and total) | cost. Tool bubbles show only the clock time. Totals and tool usage counts per tool are in the group info panel.
 - **Cost:** Computed from a hard-coded per-model price table in `dashboard.py` (input, output, cache read, cache write per million tokens). Unknown model: show tokens only, cost "n/a".
 
 ### 9. Data Persistence & Lifecycle
 Transcript lives in browser memory only. Page reload clears everything; the page shows only traffic that arrives after it was opened.
 
 - Messages accumulate as the agent runs
-- No auto-clear; transcript grows until reload
-- A "Clear" button resets the view mid-run
+- No auto-clear; the chats grow until reload
+- A "Clear" button empties all chats mid-run
 
 ### 10. Live Update Strategy
-`dashboard.py` pushes events via **Server-Sent Events (SSE)**. The page opens one SSE stream to `/dashboard/events`; each request and each completed reply is sent as a JSON event and added to its exchange card.
+`dashboard.py` pushes events via **Server-Sent Events (SSE)**. The page opens one SSE stream to `/dashboard/events`; each request and each completed reply is sent as a JSON event, and the page adds the new messages to their chat.
 
 ### 11. Security
 Never show `authorization` or `x-api-key` header values on the page (show the first few characters followed by `...`, as `proxy.py` does).
@@ -137,26 +166,32 @@ At the end of the build it adds a short section "Questions for the next spec ver
 ---
 
 ## Success Criteria
-1. **Readability at a glance:** Opening the dashboard, the user instantly tells each message type apart by color and icon. Newest is on top.
-2. **Drill down works:** Every part of a request (system, tools, history, message) is reachable, but nothing forces the user to read it all; collapse/expand is natural.
-3. **Tool calls + results are paired:** The user can follow "I called tool X with input Y" → "tool X returned Z" without confusion.
-4. **Volume doesn't degrade the view:** After 50 exchanges (a 10-minute agent run), the page is still responsive and readable; no content is lost.
-5. **No guessing:** The user doesn't need a legend or tutorial to understand what they're looking at.
+1. **It feels like a WhatsApp group:** Opening the dashboard, the user recognizes a group chat right away: who said what, in order, newest at the bottom.
+2. **Readability at a glance:** The user instantly tells each message type and sender apart by side, color, icon, and name.
+3. **Tools are visible members:** The user sees each tool join, answer (quoting the call), and leave, and can follow "Claude called tool X with input Y" → "tool X returned Z" without confusion.
+4. **Drill down works:** System prompt, tool definitions, and full request details are reachable, but nothing forces the user to read them; collapse/expand is natural.
+5. **Volume doesn't degrade the view:** After 50 exchanges (a 10-minute agent run), the page is still responsive and readable; no message is lost or shown twice.
+6. **No guessing:** The user doesn't need a legend or tutorial to understand what they're looking at.
 
 ## Acceptance Checks
 Run all three terminals from "How to Run", open the page, then in the agent:
-1. Ask "read README.md": within 2 seconds of the request, a new card appears at the top.
-2. The `Read` tool call is shown with its result in the same place once the next request arrives.
-3. The system prompt is collapsed; expanded, it shows the full text (search for a phrase you know is in it).
-4. The reply text appears as clean, assembled text, not raw SSE `data:` lines.
-5. Ask the agent to read a file that does not exist: the tool result is shown in rose and the error counter goes up.
-6. In the second request of a conversation, only the new messages are highlighted as new.
-7. After 50 exchanges, scrolling is smooth and no card is missing.
-8. The agent behaves exactly as it does without the dashboard (no broken or delayed streaming).
-9. No authorization token is visible anywhere on the page.
+1. Ask "read README.md": within 2 seconds your message appears on the right at the bottom of the main chat, then "Claude is typing...".
+2. Claude's bubble shows the `Read` call, followed by "🔧 Read joined the group" and "Read is typing...".
+3. When the next request arrives, Read's bubble shows the file content as a reply quoting the call, followed by "🔧 Read left the group".
+4. Ask for a second file: `Read` joins and leaves again (it joins on every call).
+5. The system prompt is in the group info panel, collapsed; expanded, it shows the full text (search for a phrase you know is in it).
+6. The reply text appears as clean, assembled text, not raw SSE `data:` lines.
+7. Ask the agent to read a file that does not exist: the tool's bubble is rose and the error counter goes up.
+8. Each message appears once: after several requests, earlier messages are not repeated.
+9. Side requests appear only in the "Side requests" chat, not in the main chat.
+10. Scroll up while the agent works: the view does not jump, and a "↓ N new messages" button appears.
+11. After 50 exchanges, scrolling is smooth and no message is missing.
+12. The agent behaves exactly as it does without the dashboard (no broken or delayed streaming).
+13. No authorization token is visible anywhere on the page.
 
 ## Out of Scope (for v1)
 - Free-text search or jumping to a specific message
+- Sending messages from the dashboard (no input box, read-only)
 - History that survives a page reload
 - Exporting or re-playing transcripts
 - Agent control (pause/resume/kill/rewind)
@@ -175,11 +210,12 @@ Run all three terminals from "How to Run", open the page, then in the agent:
 
 **Page (single HTML file served by `dashboard.py`):**
 - SSE client for `/dashboard/events`
-- Exchange cards with request and reply parts, collapsible sections
+- WhatsApp-style layout: chat list, chat header, group info panel, chat area (section 1)
+- Bubbles per sender, tool join/leave lines, reply quotes, typing indicators (sections 2, 6)
 - Color and icon encoding per message type (section 3)
-- Diff against previous request (section 5)
-- Tool filter, side-request toggle, error counter, Clear button
-- Stats footer per card and totals in the header
+- Show each message once, split traffic into chats (sections 5, 7)
+- Tool filter, error counter, Clear button, "new messages" button
+- Stats under Claude's bubbles and totals in the group info panel
 
 **Event schema** (rough; will be refined):
 - `{ "type": "request", "id": ..., "data": { model, system, tools, messages, params, started_at } }`
